@@ -1,0 +1,43 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Python/R caches
+__pycache__/
+*.py[cod]
+*.Rhistory
+*.RData
+*.Rproj.user/
+
+# Snakemake runtime
+.snakemake/
+code/.snakemake/
+code/log/
+.snakejob.*
+
+# Workflow outputs and downloaded tools/maps
+out/
+work/
+tools/
+maps/
+
+# Raw genomic inputs
+chr*/
+data/raw/
+*.vcf.gz
+*.vcf.gz.tbi
+*.bcf
+*.csi
+*.bam
+*.bai
+*.cram
+*.crai
+
+# Logs and temp
+*.log
+*.tmp
+*.temp

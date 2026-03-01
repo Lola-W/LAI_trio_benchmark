@@ -1,0 +1,564 @@
+configfile: "snake_conf.yaml"
+
+import os
+import csv
+import gzip
+import re
+from datetime import datetime
+import yaml
+
+
+def strip_hidden(v):
+    # Drop invisible characters that often leak in from copy/paste.
+    return str(v).replace("\ufeff", "").replace("\u200b", "")
+
+
+def clean_str(v):
+    return strip_hidden(v).strip()
+
+
+def clean_token(v):
+    # For path/name tokens, remove all whitespace (including accidental internal spaces).
+    return re.sub(r"\s+", "", clean_str(v))
+
+
+def clean_label(v):
+    # Keep only safe filename token characters.
+    s = clean_token(v)
+    s = re.sub(r"[^A-Za-z0-9_.-]", "", s)
+    if not s:
+        raise ValueError("Invalid empty label after sanitization: %r" % (v,))
+    return s
+
+
+def clean_chrom(v):
+    # Canonicalize to autosomal numeric chromosome token (e.g. "22").
+    raw = clean_str(v)
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not digits:
+        # Fallback if value is like "chrX" or "X".
+        s = clean_label(raw)
+        s = re.sub(r"^(chr|CHR)", "", s)
+        if s.upper() in {"X", "Y", "M", "MT"}:
+            return s.upper()
+        raise ValueError("Invalid chromosome value after sanitization: %r" % (v,))
+    return str(int(digits))
+
+
+def clean_path(v):
+    # Normalize accidental whitespace around separators and remove any remaining whitespace.
+    p = re.sub(r"\s*/\s*", "/", clean_str(v))
+    p = re.sub(r"\s+", "", p)
+    return p.rstrip("/")
+
+
+ROOT_DIR = clean_path(config["root_dir"])
+CHR = clean_chrom(config.get("chromosome", "22"))
+THREADS_CFG = config.get("threads", {})
+MEM_CFG = config.get("memory_gb", {})
+SAMPLE_CONFIG_PATH = clean_path(config["sample_config"])
+LAI_ENV_PREFIX = clean_path(config.get("lai_env_prefix", ""))
+GNOMIX_MODEL_INFERENCE = clean_str(config.get("gnomix_model_inference", "fast"))
+
+with open(SAMPLE_CONFIG_PATH, "r") as f:
+    SAMPLE_CFG = yaml.safe_load(f)
+
+POPULATION = clean_label(SAMPLE_CFG["population"])
+SUPERPOPULATION = clean_label(SAMPLE_CFG["superpopulation"])
+N_SAMPLES = int(SAMPLE_CFG["n_samples"])
+SEED_SAMPLES = [
+    clean_label(x) for x in list(SAMPLE_CFG.get("seed_samples", [])) if clean_str(x)
+]
+MASKING_MODE = clean_label(SAMPLE_CFG.get("masking_mode", "child_only"))
+
+for _k, _v in {
+    "ROOT_DIR": ROOT_DIR,
+    "CHR": CHR,
+    "POPULATION": POPULATION,
+    "SUPERPOPULATION": SUPERPOPULATION,
+}.items():
+    if any(ch.isspace() for ch in _v):
+        raise ValueError("%s still contains whitespace after sanitization: %r" % (_k, _v))
+
+if MASKING_MODE != "child_only":
+    raise ValueError("This workflow currently supports masking_mode=child_only only.")
+
+RAW_VCF = clean_path(
+    f"{ROOT_DIR}/chr{CHR}/1kGP_high_coverage_Illumina.chr{CHR}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
+)
+
+META_TRIOS = clean_path(f"{ROOT_DIR}/code/meta/trios.complete.tsv")
+META_POP_MAP = clean_path(f"{ROOT_DIR}/code/meta/sample_to_pop_superpop.tsv")
+META_SAMPLE_TO_POP = clean_path(f"{ROOT_DIR}/code/meta/sample_to_population.tsv")
+META_SAMPLE_TO_SUPERPOP = clean_path(f"{ROOT_DIR}/code/meta/sample_to_superpopulation.tsv")
+META_FLARE_PANEL = clean_path(f"{ROOT_DIR}/code/meta/flare_ref_panel.child_only.population.txt")
+META_RFMIX_MAP = clean_path(
+    f"{ROOT_DIR}/code/meta/rfmix_sample_map.child_only.population.tsv"
+)
+META_GNOMIX_MAP = clean_path(
+    f"{ROOT_DIR}/code/meta/gnomix_sample_map.child_only.population.tsv"
+)
+
+DATA_COMMON_DIR = clean_path(f"{ROOT_DIR}/data/common")
+DATA_FLARE_DIR = clean_path(f"{ROOT_DIR}/data/FLARE")
+DATA_RFMIX_DIR = clean_path(f"{ROOT_DIR}/data/RFMix")
+DATA_GNOMIX_DIR = clean_path(f"{ROOT_DIR}/data/Gnomix")
+
+DATA_FLARE_TEST_DIR = clean_path(f"{DATA_FLARE_DIR}/test")
+DATA_RFMIX_TEST_DIR = clean_path(f"{DATA_RFMIX_DIR}/test")
+DATA_GNOMIX_TEST_DIR = clean_path(f"{DATA_GNOMIX_DIR}/test")
+
+FLARE_PANEL = clean_path(f"{DATA_FLARE_DIR}/flare_ref_panel.child_only.population.txt")
+RFMIX_SAMPLE_MAP = clean_path(f"{DATA_RFMIX_DIR}/rfmix_sample_map.child_only.population.tsv")
+GNOMIX_SAMPLE_MAP = clean_path(f"{DATA_GNOMIX_DIR}/gnomix_sample_map.child_only.population.tsv")
+
+SAMPLE_SELECTION_TSV = clean_path(
+    f"{DATA_COMMON_DIR}/selected_test_children.{POPULATION}.{SUPERPOPULATION}.chr{CHR}.tsv"
+)
+
+FLARE_QUERY_TEMPLATE = clean_path(
+    f"{DATA_FLARE_TEST_DIR}" + "/{child}/query_child.test.txt"
+)
+RFMIX_QUERY_TEMPLATE = clean_path(
+    f"{DATA_RFMIX_TEST_DIR}" + "/{child}/query_child.test.txt"
+)
+GNOMIX_QUERY_TEMPLATE = clean_path(
+    f"{DATA_GNOMIX_TEST_DIR}" + "/{child}/query_child.test.txt"
+)
+
+FLARE_TRIO_TEMPLATE = clean_path(f"{DATA_FLARE_TEST_DIR}" + "/{child}/trio.test.tsv")
+RFMIX_TRIO_TEMPLATE = clean_path(f"{DATA_RFMIX_TEST_DIR}" + "/{child}/trio.test.tsv")
+GNOMIX_TRIO_TEMPLATE = clean_path(f"{DATA_GNOMIX_TEST_DIR}" + "/{child}/trio.test.tsv")
+
+FLARE_ANC_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/FLARE/child_only_population/chr{CHR}" + "/{child}/test_chr%s.anc.vcf.gz" % CHR
+)
+FLARE_GLOBAL_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/FLARE/child_only_population/chr{CHR}" + "/{child}/test_chr%s.global.anc.gz" % CHR
+)
+FLARE_MODEL_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/FLARE/child_only_population/chr{CHR}" + "/{child}/test_chr%s.model" % CHR
+)
+FLARE_LOG_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/FLARE/child_only_population/chr{CHR}" + "/{child}/test_chr%s.log" % CHR
+)
+
+RFMIX_MSP_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/RFMix/child_only_population/chr{CHR}" + "/{child}/test_chr%s.msp.tsv" % CHR
+)
+RFMIX_FB_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/RFMix/child_only_population/chr{CHR}" + "/{child}/test_chr%s.fb.tsv" % CHR
+)
+
+GNOMIX_MSP_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/Gnomix/child_only_population/chr{CHR}" + "/{child}/query_results.msp"
+)
+GNOMIX_FB_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/Gnomix/child_only_population/chr{CHR}" + "/{child}/query_results.fb"
+)
+
+CHILD_SUMMARY_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/Combined/chr{CHR}" + "/{child}/combined_tool_summary.tsv"
+)
+CHILD_PATHS_TEMPLATE = clean_path(
+    f"{ROOT_DIR}/out/Combined/chr{CHR}" + "/{child}/combined_tool_paths.txt"
+)
+
+COMBINED_TSV = clean_path(f"{ROOT_DIR}/out/Combined/chr{CHR}/combined_tool_summary.tsv")
+COMBINED_TXT = clean_path(f"{ROOT_DIR}/out/Combined/chr{CHR}/combined_tool_paths.txt")
+
+PREPARE_MAPS_SCRIPT = clean_path(f"{ROOT_DIR}/code/scripts/prepare_genetic_maps.sh")
+RUN_FLARE_SCRIPT = clean_path(f"{ROOT_DIR}/code/scripts/run_flare_test_child_only.sh")
+RUN_RFMIX_SCRIPT = clean_path(f"{ROOT_DIR}/code/scripts/run_rfmix_test_child_only.sh")
+RUN_GNOMIX_SCRIPT = clean_path(f"{ROOT_DIR}/code/scripts/run_gnomix_test_child_only.sh")
+
+MAP_FLARE = clean_path(f"{ROOT_DIR}/maps/plink/plink.chr{CHR}.GRCh38.map")
+MAP_RFMIX = clean_path(f"{ROOT_DIR}/maps/plink_allchr.GRCh38.map.tsv")
+MAP_GNOMIX = clean_path(f"{ROOT_DIR}/maps/gnomix_map_chr{CHR}.tsv")
+
+
+def load_child_to_trio(path):
+    child_to_trio = {}
+    with open(path, "r") as f:
+        for row in csv.reader(f, delimiter="\t"):
+            if not row or row[0].startswith("#"):
+                continue
+            if len(row) < 4:
+                continue
+            trio_id, child, father, mother = row[:4]
+            child_to_trio[clean_label(child)] = (
+                clean_label(trio_id),
+                clean_label(child),
+                clean_label(father),
+                clean_label(mother),
+            )
+    return child_to_trio
+
+
+def select_trios_for_test():
+    child_to_trio = load_child_to_trio(META_TRIOS)
+    eligible = []
+    with open(META_POP_MAP, "r") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            sid = clean_label(row["sample_id"])
+            if sid not in child_to_trio:
+                continue
+            if (
+                clean_label(row["population"]) == POPULATION
+                and clean_label(row["superpopulation"]) == SUPERPOPULATION
+            ):
+                eligible.append(sid)
+
+    if not eligible:
+        raise ValueError(
+            "No eligible child samples found for %s/%s." % (POPULATION, SUPERPOPULATION)
+        )
+
+    chosen = []
+    eligible_set = set(eligible)
+
+    for sid in SEED_SAMPLES:
+        if sid not in eligible_set:
+            raise ValueError(
+                "Seed sample %s is not eligible for %s/%s child-only masking."
+                % (sid, POPULATION, SUPERPOPULATION)
+            )
+        if sid not in chosen:
+            chosen.append(sid)
+
+    for sid in sorted(eligible):
+        if sid not in chosen:
+            chosen.append(sid)
+        if len(chosen) >= N_SAMPLES:
+            break
+
+    if len(chosen) < N_SAMPLES:
+        raise ValueError(
+            "Requested %d samples but only found %d eligible %s/%s children with complete trios."
+            % (N_SAMPLES, len(chosen), POPULATION, SUPERPOPULATION)
+        )
+
+    return [child_to_trio[sid] for sid in chosen]
+
+
+SELECTED_TRIOS = select_trios_for_test()
+TARGET_CHILDREN = [x[1] for x in SELECTED_TRIOS]
+
+FLARE_QUERY_FILES = expand(FLARE_QUERY_TEMPLATE, child=TARGET_CHILDREN)
+RFMIX_QUERY_FILES = expand(RFMIX_QUERY_TEMPLATE, child=TARGET_CHILDREN)
+GNOMIX_QUERY_FILES = expand(GNOMIX_QUERY_TEMPLATE, child=TARGET_CHILDREN)
+FLARE_TRIO_FILES = expand(FLARE_TRIO_TEMPLATE, child=TARGET_CHILDREN)
+RFMIX_TRIO_FILES = expand(RFMIX_TRIO_TEMPLATE, child=TARGET_CHILDREN)
+GNOMIX_TRIO_FILES = expand(GNOMIX_TRIO_TEMPLATE, child=TARGET_CHILDREN)
+
+FLARE_ANC_FILES = expand(FLARE_ANC_TEMPLATE, child=TARGET_CHILDREN)
+FLARE_GLOBAL_FILES = expand(FLARE_GLOBAL_TEMPLATE, child=TARGET_CHILDREN)
+FLARE_MODEL_FILES = expand(FLARE_MODEL_TEMPLATE, child=TARGET_CHILDREN)
+FLARE_LOG_FILES = expand(FLARE_LOG_TEMPLATE, child=TARGET_CHILDREN)
+RFMIX_MSP_FILES = expand(RFMIX_MSP_TEMPLATE, child=TARGET_CHILDREN)
+RFMIX_FB_FILES = expand(RFMIX_FB_TEMPLATE, child=TARGET_CHILDREN)
+GNOMIX_MSP_FILES = expand(GNOMIX_MSP_TEMPLATE, child=TARGET_CHILDREN)
+GNOMIX_FB_FILES = expand(GNOMIX_FB_TEMPLATE, child=TARGET_CHILDREN)
+CHILD_SUMMARY_FILES = expand(CHILD_SUMMARY_TEMPLATE, child=TARGET_CHILDREN)
+CHILD_PATH_FILES = expand(CHILD_PATHS_TEMPLATE, child=TARGET_CHILDREN)
+
+
+localrules: all, build_test_lists, combine_tool_results
+
+
+rule all:
+    input:
+        COMBINED_TSV,
+        COMBINED_TXT,
+
+
+rule stage_panel_maps:
+    input:
+        sample_to_pop=META_SAMPLE_TO_POP,
+        sample_to_superpop=META_SAMPLE_TO_SUPERPOP,
+        sample_to_pop_superpop=META_POP_MAP,
+        flare_panel=META_FLARE_PANEL,
+        rfmix_map=META_RFMIX_MAP,
+        gnomix_map=META_GNOMIX_MAP,
+    output:
+        common_pop=clean_path(f"{DATA_COMMON_DIR}/sample_to_population.tsv"),
+        common_superpop=clean_path(f"{DATA_COMMON_DIR}/sample_to_superpopulation.tsv"),
+        common_pop_superpop=clean_path(f"{DATA_COMMON_DIR}/sample_to_pop_superpop.tsv"),
+        flare_panel=FLARE_PANEL,
+        rfmix_map=RFMIX_SAMPLE_MAP,
+        gnomix_map=GNOMIX_SAMPLE_MAP,
+    shell:
+        r"""
+        mkdir -p {DATA_COMMON_DIR} {DATA_FLARE_TEST_DIR} {DATA_RFMIX_TEST_DIR} {DATA_GNOMIX_TEST_DIR}
+        cp {input.sample_to_pop} {output.common_pop}
+        cp {input.sample_to_superpop} {output.common_superpop}
+        cp {input.sample_to_pop_superpop} {output.common_pop_superpop}
+        cp {input.flare_panel} {output.flare_panel}
+        cp {input.rfmix_map} {output.rfmix_map}
+        cp {input.gnomix_map} {output.gnomix_map}
+        """
+
+
+rule build_test_lists:
+    input:
+        trios=META_TRIOS,
+        pop_map=META_POP_MAP,
+        staged=rules.stage_panel_maps.output.flare_panel,
+    output:
+        selected=SAMPLE_SELECTION_TSV,
+        flare_query=FLARE_QUERY_FILES,
+        rfmix_query=RFMIX_QUERY_FILES,
+        gnomix_query=GNOMIX_QUERY_FILES,
+        flare_trio=FLARE_TRIO_FILES,
+        rfmix_trio=RFMIX_TRIO_FILES,
+        gnomix_trio=GNOMIX_TRIO_FILES,
+    run:
+        with open(output.selected, "w") as f:
+            f.write("trio_id\tchild\tfather\tmother\tpopulation\tsuperpopulation\n")
+            for trio_id, child, father, mother in SELECTED_TRIOS:
+                f.write(
+                    "%s\t%s\t%s\t%s\t%s\t%s\n"
+                    % (trio_id, child, father, mother, POPULATION, SUPERPOPULATION)
+                )
+
+        for trio_id, child, father, mother in SELECTED_TRIOS:
+            for base_dir in [DATA_FLARE_TEST_DIR, DATA_RFMIX_TEST_DIR, DATA_GNOMIX_TEST_DIR]:
+                child_dir = clean_path(f"{base_dir}/{child}")
+                os.makedirs(child_dir, exist_ok=True)
+                with open(clean_path(f"{child_dir}/query_child.test.txt"), "w") as qf:
+                    qf.write(child + "\n")
+                with open(clean_path(f"{child_dir}/trio.test.tsv"), "w") as tf:
+                    tf.write("%s\t%s\t%s\t%s\n" % (trio_id, child, father, mother))
+
+
+rule prepare_genetic_maps:
+    input:
+        script=PREPARE_MAPS_SCRIPT,
+    output:
+        flare_map=MAP_FLARE,
+        rfmix_map=MAP_RFMIX,
+        gnomix_map=MAP_GNOMIX,
+    shell:
+        "bash {input.script}"
+
+
+rule run_flare:
+    input:
+        script=RUN_FLARE_SCRIPT,
+        raw_vcf=RAW_VCF,
+        query=FLARE_QUERY_TEMPLATE,
+        trio=FLARE_TRIO_TEMPLATE,
+        panel=FLARE_PANEL,
+        map=MAP_FLARE,
+    output:
+        anc=FLARE_ANC_TEMPLATE,
+        global_anc=FLARE_GLOBAL_TEMPLATE,
+        model=FLARE_MODEL_TEMPLATE,
+        log=FLARE_LOG_TEMPLATE,
+    threads: int(THREADS_CFG.get("flare", 8))
+    params:
+        mem_gb=int(MEM_CFG.get("flare", 64)),
+        work_dir=lambda wc: clean_path(f"{ROOT_DIR}/work/FLARE/chr{CHR}/{wc.child}"),
+        out_prefix=lambda wc: clean_path(
+            f"{ROOT_DIR}/out/FLARE/child_only_population/chr{CHR}/{wc.child}/test_chr{CHR}"
+        ),
+    resources:
+        mem_mb=int(MEM_CFG.get("flare", 64)) * 1024
+    shell:
+        r"""
+        QUERY_LIST={input.query} \
+        REF_PANEL={input.panel} \
+        LAI_ENV_PREFIX={LAI_ENV_PREFIX} \
+        WORK_DIR={params.work_dir} \
+        OUT_PREFIX={params.out_prefix} \
+        FLARE_MEM_GB={params.mem_gb} \
+        bash {input.script} {CHR} {threads}
+        """
+
+
+rule run_rfmix:
+    input:
+        script=RUN_RFMIX_SCRIPT,
+        raw_vcf=RAW_VCF,
+        query=RFMIX_QUERY_TEMPLATE,
+        trio=RFMIX_TRIO_TEMPLATE,
+        sample_map=RFMIX_SAMPLE_MAP,
+        map=MAP_RFMIX,
+    output:
+        msp=RFMIX_MSP_TEMPLATE,
+        fb=RFMIX_FB_TEMPLATE,
+    threads: int(THREADS_CFG.get("rfmix", 14))
+    params:
+        mem_gb=int(MEM_CFG.get("rfmix", 112)),
+        work_dir=lambda wc: clean_path(f"{ROOT_DIR}/work/RFMix/chr{CHR}/{wc.child}"),
+        out_prefix=lambda wc: clean_path(
+            f"{ROOT_DIR}/out/RFMix/child_only_population/chr{CHR}/{wc.child}/test_chr{CHR}"
+        ),
+        log_dir=lambda wc: clean_path(f"{ROOT_DIR}/out/RFMix/logs/{wc.child}"),
+    resources:
+        mem_mb=int(MEM_CFG.get("rfmix", 112)) * 1024
+    shell:
+        r"""
+        QUERY_LIST={input.query} \
+        SAMPLE_MAP={input.sample_map} \
+        LAI_ENV_PREFIX={LAI_ENV_PREFIX} \
+        WORK_DIR={params.work_dir} \
+        OUT_PREFIX={params.out_prefix} \
+        LOG_DIR={params.log_dir} \
+        RFMIX_THREADS={threads} \
+        RFMIX_MEM_GB={params.mem_gb} \
+        bash {input.script} {CHR} {threads}
+        """
+
+
+rule run_gnomix:
+    input:
+        script=RUN_GNOMIX_SCRIPT,
+        raw_vcf=RAW_VCF,
+        query=GNOMIX_QUERY_TEMPLATE,
+        trio=GNOMIX_TRIO_TEMPLATE,
+        sample_map=GNOMIX_SAMPLE_MAP,
+        map=MAP_GNOMIX,
+    output:
+        msp=GNOMIX_MSP_TEMPLATE,
+        fb=GNOMIX_FB_TEMPLATE,
+    threads: int(THREADS_CFG.get("gnomix", 14))
+    params:
+        mem_gb=int(MEM_CFG.get("gnomix", 112)),
+        work_dir=lambda wc: clean_path(f"{ROOT_DIR}/work/Gnomix/chr{CHR}/{wc.child}"),
+        out_dir=lambda wc: clean_path(
+            f"{ROOT_DIR}/out/Gnomix/child_only_population/chr{CHR}/{wc.child}"
+        ),
+        log_dir=lambda wc: clean_path(f"{ROOT_DIR}/out/Gnomix/logs/{wc.child}"),
+    resources:
+        mem_mb=int(MEM_CFG.get("gnomix", 112)) * 1024
+    shell:
+        r"""
+        QUERY_LIST={input.query} \
+        SAMPLE_MAP={input.sample_map} \
+        LAI_ENV_PREFIX={LAI_ENV_PREFIX} \
+        WORK_DIR={params.work_dir} \
+        OUT_DIR={params.out_dir} \
+        LOG_DIR={params.log_dir} \
+        GNOMIX_MODEL_INFERENCE={GNOMIX_MODEL_INFERENCE} \
+        GNOMIX_MEM_GB={params.mem_gb} \
+        bash {input.script} {CHR} {threads}
+        """
+
+
+rule combine_child_results:
+    input:
+        selected=SAMPLE_SELECTION_TSV,
+        flare_global=FLARE_GLOBAL_TEMPLATE,
+        flare_anc=FLARE_ANC_TEMPLATE,
+        rfmix_msp=RFMIX_MSP_TEMPLATE,
+        rfmix_fb=RFMIX_FB_TEMPLATE,
+        gnomix_msp=GNOMIX_MSP_TEMPLATE,
+        gnomix_fb=GNOMIX_FB_TEMPLATE,
+    output:
+        summary=CHILD_SUMMARY_TEMPLATE,
+        paths=CHILD_PATHS_TEMPLATE,
+    run:
+        child = clean_label(wildcards.child)
+        os.makedirs(os.path.dirname(output.summary), exist_ok=True)
+
+        selected_rows = {}
+        with open(input.selected, "r") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                selected_rows[clean_label(row["child"])] = row
+        if child not in selected_rows:
+            raise ValueError("Child %s is not present in %s" % (child, input.selected))
+
+        flare_best_anc = "NA"
+        flare_best_score = -1.0
+        with gzip.open(input.flare_global, "rt") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            anc_cols = [c for c in reader.fieldnames if c != "SAMPLE"]
+            rows = list(reader)
+            if rows:
+                row = rows[0]
+                flare_best_anc = max(anc_cols, key=lambda a: float(row[a]))
+                flare_best_score = float(row[flare_best_anc])
+
+        def msp_data_rows(path):
+            opener = gzip.open if path.endswith(".gz") else open
+            with opener(path, "rt") as f:
+                header_seen = False
+                n_rows = 0
+                for line in f:
+                    if line.startswith("#"):
+                        continue
+                    if not header_seen:
+                        header_seen = True
+                        continue
+                    if line.strip():
+                        n_rows += 1
+                return n_rows
+
+        rfmix_rows = msp_data_rows(input.rfmix_msp)
+        gnomix_rows = msp_data_rows(input.gnomix_msp)
+
+        now = datetime.now().isoformat(timespec="seconds")
+        with open(output.summary, "w") as f:
+            f.write(
+                "timestamp\tsample_id\ttool\tchromosome\tstatus\tprediction\tprediction_score\tdata_rows\tresult_file\n"
+            )
+            f.write(
+                "%s\t%s\tFLARE\tchr%s\tOK\t%s\t%s\tNA\t%s\n"
+                % (now, child, CHR, flare_best_anc, flare_best_score, input.flare_anc)
+            )
+            f.write(
+                "%s\t%s\tRFMix\tchr%s\tOK\tNA\tNA\t%s\t%s\n"
+                % (now, child, CHR, rfmix_rows, input.rfmix_msp)
+            )
+            f.write(
+                "%s\t%s\tGnomix\tchr%s\tOK\tNA\tNA\t%s\t%s\n"
+                % (now, child, CHR, gnomix_rows, input.gnomix_msp)
+            )
+
+        with open(output.paths, "w") as f:
+            f.write("CHILD=%s\n" % child)
+            f.write("FLARE_ANC=%s\n" % input.flare_anc)
+            f.write("FLARE_GLOBAL=%s\n" % input.flare_global)
+            f.write("RFMIX_MSP=%s\n" % input.rfmix_msp)
+            f.write("RFMIX_FB=%s\n" % input.rfmix_fb)
+            f.write("GNOMIX_MSP=%s\n" % input.gnomix_msp)
+            f.write("GNOMIX_FB=%s\n" % input.gnomix_fb)
+
+
+rule combine_tool_results:
+    input:
+        selected=SAMPLE_SELECTION_TSV,
+        child_summaries=CHILD_SUMMARY_FILES,
+        child_paths=CHILD_PATH_FILES,
+    output:
+        summary=COMBINED_TSV,
+        paths=COMBINED_TXT,
+    run:
+        os.makedirs(os.path.dirname(output.summary), exist_ok=True)
+
+        with open(output.summary, "w") as out:
+            wrote_header = False
+            for child_summary in input.child_summaries:
+                with open(child_summary, "r") as f:
+                    for idx, line in enumerate(f):
+                        if idx == 0:
+                            if not wrote_header:
+                                out.write(line)
+                                wrote_header = True
+                        else:
+                            out.write(line)
+
+        with open(output.paths, "w") as out:
+            out.write("chromosome=chr%s\n" % CHR)
+            out.write("n_children=%d\n" % len(TARGET_CHILDREN))
+            out.write("children=%s\n" % ",".join(TARGET_CHILDREN))
+            out.write("\n")
+            for child_path in input.child_paths:
+                out.write("## %s\n" % child_path)
+                with open(child_path, "r") as f:
+                    for line in f:
+                        out.write(line)
+                out.write("\n")
