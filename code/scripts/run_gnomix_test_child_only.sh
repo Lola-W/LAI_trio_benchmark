@@ -9,7 +9,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHR="${1:-22}"
 THREADS="${2:-${THREADS:-${SLURM_CPUS_PER_TASK:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 1)}}}"
 GNOMIX_MEM_GB="${GNOMIX_MEM_GB:-112}"
-DEFAULT_LAI_ENV_PREFIX="${ROOT_DIR}/.env/lai-benchmark-tools"
+MAX_REF_PER_POP="${MAX_REF_PER_POP:-0}"   # 0 => keep all reference samples
+REF_MIN_AF="${REF_MIN_AF:-0}"             # 0 => no AF filter in reference
+GNOMIX_R_ADMIXED="${GNOMIX_R_ADMIXED:-1}" # lower than 1 reduces simulated admixed samples
+DEFAULT_LAI_ENV_PREFIX="/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/lai-benchmark-tools"
+DEFAULT_GNOMIX_ENV_PREFIX="/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/gnomix-legacy"
 
 LAI_ENV_PREFIX="${LAI_ENV_PREFIX:-${LAI_TOOLS_ENV_PREFIX:-}}"
 if [[ -z "${LAI_ENV_PREFIX}" ]]; then
@@ -22,9 +26,19 @@ fi
 if [[ -n "${LAI_ENV_PREFIX}" ]]; then
   export PATH="${LAI_ENV_PREFIX}/bin:${PATH}"
 fi
+
+GNOMIX_ENV_PREFIX="${GNOMIX_ENV_PREFIX:-${GNOMIX_TOOLS_ENV_PREFIX:-}}"
+if [[ -z "${GNOMIX_ENV_PREFIX}" && -x "${DEFAULT_GNOMIX_ENV_PREFIX}/bin/python" ]]; then
+  GNOMIX_ENV_PREFIX="${DEFAULT_GNOMIX_ENV_PREFIX}"
+fi
+
 BCFTOOLS_BIN="${BCFTOOLS_BIN:-bcftools}"
 TABIX_BIN="${TABIX_BIN:-tabix}"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+if [[ -n "${GNOMIX_ENV_PREFIX}" ]]; then
+  PYTHON_BIN="${PYTHON_BIN:-${GNOMIX_ENV_PREFIX}/bin/python}"
+else
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
+fi
 command -v "${BCFTOOLS_BIN}" >/dev/null 2>&1 || {
   echo "Missing bcftools. Set LAI_ENV_PREFIX or BCFTOOLS_BIN." >&2
   exit 1
@@ -33,10 +47,10 @@ command -v "${TABIX_BIN}" >/dev/null 2>&1 || {
   echo "Missing tabix. Set LAI_ENV_PREFIX or TABIX_BIN." >&2
   exit 1
 }
-command -v "${PYTHON_BIN}" >/dev/null 2>&1 || {
-  echo "Missing python. Set LAI_ENV_PREFIX or PYTHON_BIN." >&2
+if [[ ! -x "${PYTHON_BIN}" ]] && ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+  echo "Missing python. Set GNOMIX_ENV_PREFIX/GNOMIX_TOOLS_ENV_PREFIX or PYTHON_BIN." >&2
   exit 1
-}
+fi
 
 RAW_VCF="${RAW_VCF:-${ROOT_DIR}/chr${CHR}/1kGP_high_coverage_Illumina.chr${CHR}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz}"
 QUERY_LIST="${QUERY_LIST:-${ROOT_DIR}/data/Gnomix/test/query_child.test.txt}"
@@ -56,6 +70,8 @@ exec > >(tee -a "${LOG_FILE}") 2>&1
 echo "Log file: ${LOG_FILE}"
 echo "Start: $(date)"
 echo "Requested memory target (scheduler): ${GNOMIX_MEM_GB}G"
+echo "Gnomix env prefix: ${GNOMIX_ENV_PREFIX:-<none>}"
+echo "Python executable: ${PYTHON_BIN}"
 
 if [[ -n "${GNOMIX_MAP:-}" ]]; then
   GNOMIX_MAP="${GNOMIX_MAP}"
@@ -102,8 +118,21 @@ else
   GNOMIX_CHR="chr${CHR}"
 fi
 
+SUBSET_MAP="${WORK_DIR}/sample_map.subset.tsv"
+if [[ "${MAX_REF_PER_POP}" -gt 0 ]]; then
+  awk -v max="${MAX_REF_PER_POP}" '{
+    if (++n[$2] <= max) print $1"\t"$2
+  }' "${SAMPLE_MAP}" > "${SUBSET_MAP}"
+else
+  cp "${SAMPLE_MAP}" "${SUBSET_MAP}"
+fi
+
 REF_SAMPLES="${WORK_DIR}/ref.samples.txt"
-cut -f1 "${SAMPLE_MAP}" > "${REF_SAMPLES}"
+cut -f1 "${SUBSET_MAP}" > "${REF_SAMPLES}"
+if [[ ! -s "${REF_SAMPLES}" ]]; then
+  echo "Reference sample list is empty after subsetting." >&2
+  exit 1
+fi
 
 QUERY_VCF="${WORK_DIR}/query_child.vcf.gz"
 REF_VCF="${WORK_DIR}/reference_child_only_population.vcf.gz"
@@ -113,8 +142,13 @@ REF_RAW="${WORK_DIR}/reference_child_only_population.raw.vcf.gz"
 # Restrict to the requested chromosome and biallelic SNPs for a stable, bounded benchmark input size.
 "${BCFTOOLS_BIN}" view --threads "${THREADS}" -r "${GNOMIX_CHR}" -S "${QUERY_LIST}" -f .,PASS -m2 -M2 -v snps -Ou "${RAW_VCF}" \
   | "${BCFTOOLS_BIN}" norm --threads "${THREADS}" -d snps -Oz -o "${QUERY_RAW}"
-"${BCFTOOLS_BIN}" view --threads "${THREADS}" -r "${GNOMIX_CHR}" -S "${REF_SAMPLES}" -f .,PASS -m2 -M2 -v snps -Ou "${RAW_VCF}" \
-  | "${BCFTOOLS_BIN}" norm --threads "${THREADS}" -d snps -Oz -o "${REF_RAW}"
+if [[ "${REF_MIN_AF}" == "0" ]]; then
+  "${BCFTOOLS_BIN}" view --threads "${THREADS}" -r "${GNOMIX_CHR}" -S "${REF_SAMPLES}" -f .,PASS -m2 -M2 -v snps -Ou "${RAW_VCF}" \
+    | "${BCFTOOLS_BIN}" norm --threads "${THREADS}" -d snps -Oz -o "${REF_RAW}"
+else
+  "${BCFTOOLS_BIN}" view --threads "${THREADS}" -r "${GNOMIX_CHR}" -S "${REF_SAMPLES}" -f .,PASS -m2 -M2 -v snps -q "${REF_MIN_AF}:minor" -Ou "${RAW_VCF}" \
+    | "${BCFTOOLS_BIN}" norm --threads "${THREADS}" -d snps -Oz -o "${REF_RAW}"
+fi
 "${TABIX_BIN}" -@ "${THREADS}" -f -p vcf "${QUERY_RAW}"
 "${TABIX_BIN}" -@ "${THREADS}" -f -p vcf "${REF_RAW}"
 
@@ -126,7 +160,8 @@ REF_RAW="${WORK_DIR}/reference_child_only_population.raw.vcf.gz"
 
 q_sites="$("${BCFTOOLS_BIN}" index -n "${QUERY_VCF}")"
 r_sites="$("${BCFTOOLS_BIN}" index -n "${REF_VCF}")"
-echo "Prepared Gnomix inputs: chrom=${GNOMIX_CHR} ref_sites=${r_sites} query_sites=${q_sites}"
+ref_n="$(wc -l < "${REF_SAMPLES}")"
+echo "Prepared Gnomix inputs: chrom=${GNOMIX_CHR} ref_samples=${ref_n} max_ref_per_pop=${MAX_REF_PER_POP} ref_min_af=${REF_MIN_AF} ref_sites=${r_sites} query_sites=${q_sites}"
 if [[ "${q_sites}" -eq 0 || "${r_sites}" -eq 0 ]]; then
   echo "No common SNPs after preprocessing for ${GNOMIX_CHR}." >&2
   exit 1
@@ -134,16 +169,21 @@ fi
 
 # Use a per-run config copy so Gnomix honors requested thread count.
 THREAD_CONFIG="${WORK_DIR}/gnomix.config.threads.yaml"
-awk -v n="${THREADS}" -v mode="${GNOMIX_MODEL_INFERENCE}" '
-  /^[[:space:]]*model:[[:space:]]*$/ { in_model=1; print; next }
-  in_model && /^[^[:space:]]/ { in_model=0 }
+awk -v n="${THREADS}" -v mode="${GNOMIX_MODEL_INFERENCE}" -v r_admixed="${GNOMIX_R_ADMIXED}" '
+  /^[[:space:]]*simulation:[[:space:]]*$/ { in_sim=1; in_model=0; print; next }
+  /^[[:space:]]*model:[[:space:]]*$/ { in_model=1; in_sim=0; print; next }
+  (in_model || in_sim) && /^[^[:space:]]/ { in_model=0; in_sim=0 }
   {
-    if (!done_cores && $0 ~ /^[[:space:]]*n_cores:[[:space:]]*/) {
-      sub(/n_cores:[[:space:]]*.*/, "n_cores: " n)
+    if (in_sim && !done_r_admixed && $0 ~ /^[[:space:]]*r_admixed:[[:space:]]*/) {
+      $0 = "  r_admixed: " r_admixed
+      done_r_admixed=1
+    }
+    if (in_model && !done_cores && $0 ~ /^[[:space:]]*n_cores:[[:space:]]*/) {
+      $0 = "  n_cores: " n
       done_cores=1
     }
-    if (in_model && !done_mode && $0 ~ /^[[:space:]]*inference:[[:space:]]*$/) {
-      sub(/inference:[[:space:]]*.*/, "  inference: " mode)
+    if (in_model && !done_mode && $0 ~ /^[[:space:]]*inference:[[:space:]]*/) {
+      $0 = "  inference: " mode
       done_mode=1
     }
     print
@@ -160,6 +200,7 @@ set +e
 echo "Launching Gnomix (training mode from scratch, this can be long)."
 echo "  threads=${THREADS}"
 echo "  mem_gb_target=${GNOMIX_MEM_GB}"
+echo "  max_ref_per_pop=${MAX_REF_PER_POP} ref_min_af=${REF_MIN_AF} r_admixed=${GNOMIX_R_ADMIXED}"
 "${PYTHON_BIN}" "${GNOMIX_SCRIPT}" \
   "${QUERY_VCF}" \
   "${OUT_DIR}" \
@@ -167,7 +208,7 @@ echo "  mem_gb_target=${GNOMIX_MEM_GB}"
   False \
   "${GNOMIX_MAP}" \
   "${REF_VCF}" \
-  "${SAMPLE_MAP}" \
+  "${SUBSET_MAP}" \
   "${THREAD_CONFIG}"
 status=$?
 set -e
@@ -186,5 +227,5 @@ if [[ ! -f "${OUT_DIR}/query_results.msp" || ! -f "${OUT_DIR}/query_results.fb" 
   exit 1
 fi
 
-echo "Gnomix test completed: ${OUT_DIR} (threads=${THREADS}, model_inference=${GNOMIX_MODEL_INFERENCE})"
+echo "Gnomix test completed: ${OUT_DIR} (threads=${THREADS}, model_inference=${GNOMIX_MODEL_INFERENCE}, max_ref_per_pop=${MAX_REF_PER_POP}, ref_min_af=${REF_MIN_AF}, r_admixed=${GNOMIX_R_ADMIXED})"
 echo "End: $(date)"

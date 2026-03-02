@@ -57,8 +57,35 @@ CHR = clean_chrom(config.get("chromosome", "22"))
 THREADS_CFG = config.get("threads", {})
 MEM_CFG = config.get("memory_gb", {})
 SAMPLE_CONFIG_PATH = clean_path(config["sample_config"])
-LAI_ENV_PREFIX = clean_path(config.get("lai_env_prefix", ""))
+LAI_ENV_PREFIX = clean_path(
+    config.get(
+        "lai_env_prefix",
+        "/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/lai-benchmark-tools",
+    )
+)
 GNOMIX_MODEL_INFERENCE = clean_str(config.get("gnomix_model_inference", "fast"))
+RFMIX_MAX_REF_PER_POP = int(config.get("rfmix_max_ref_per_pop", 0))
+RFMIX_REF_MIN_AF = clean_str(config.get("rfmix_ref_min_af", "0"))
+GNOMIX_MAX_REF_PER_POP = int(config.get("gnomix_max_ref_per_pop", 0))
+GNOMIX_REF_MIN_AF = clean_str(config.get("gnomix_ref_min_af", "0"))
+GNOMIX_R_ADMIXED = clean_str(config.get("gnomix_r_admixed", "1"))
+
+for _name, _value in {
+    "RFMIX_MAX_REF_PER_POP": RFMIX_MAX_REF_PER_POP,
+    "GNOMIX_MAX_REF_PER_POP": GNOMIX_MAX_REF_PER_POP,
+}.items():
+    if _value < 0:
+        raise ValueError(f"{_name} must be >= 0, got {_value}")
+
+for _name, _value in {
+    "RFMIX_REF_MIN_AF": RFMIX_REF_MIN_AF,
+    "GNOMIX_REF_MIN_AF": GNOMIX_REF_MIN_AF,
+    "GNOMIX_R_ADMIXED": GNOMIX_R_ADMIXED,
+}.items():
+    try:
+        float(_value)
+    except ValueError as exc:
+        raise ValueError("%s must be numeric, got %r" % (_name, _value)) from exc
 
 with open(SAMPLE_CONFIG_PATH, "r") as f:
     SAMPLE_CFG = yaml.safe_load(f)
@@ -406,6 +433,8 @@ rule run_rfmix:
         WORK_DIR={params.work_dir} \
         OUT_PREFIX={params.out_prefix} \
         LOG_DIR={params.log_dir} \
+        MAX_REF_PER_POP={RFMIX_MAX_REF_PER_POP} \
+        REF_MIN_AF={RFMIX_REF_MIN_AF} \
         RFMIX_THREADS={threads} \
         RFMIX_MEM_GB={params.mem_gb} \
         bash {input.script} {CHR} {threads}
@@ -441,6 +470,9 @@ rule run_gnomix:
         WORK_DIR={params.work_dir} \
         OUT_DIR={params.out_dir} \
         LOG_DIR={params.log_dir} \
+        MAX_REF_PER_POP={GNOMIX_MAX_REF_PER_POP} \
+        REF_MIN_AF={GNOMIX_REF_MIN_AF} \
+        GNOMIX_R_ADMIXED={GNOMIX_R_ADMIXED} \
         GNOMIX_MODEL_INFERENCE={GNOMIX_MODEL_INFERENCE} \
         GNOMIX_MEM_GB={params.mem_gb} \
         bash {input.script} {CHR} {threads}

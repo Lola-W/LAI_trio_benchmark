@@ -3,9 +3,9 @@ __default__:
   cpus_per_task: 1
   mem: "8G"
   time: "4-00:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
 
 
 
@@ -14,9 +14,9 @@ stage_panel_maps:
   cpus_per_task: 1
   mem: "8G"
   time: "02:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
 
 
 
@@ -25,9 +25,9 @@ build_test_lists:
   cpus_per_task: 1
   mem: "8G"
   time: "02:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
 
 
 
@@ -36,9 +36,9 @@ prepare_genetic_maps:
   cpus_per_task: 2
   mem: "16G"
   time: "06:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
 
 
 
@@ -47,9 +47,9 @@ run_flare:
   cpus_per_task: 8
   mem: "64G"
   time: "24:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
 
 
 
@@ -58,9 +58,9 @@ run_rfmix:
   cpus_per_task: 14
   mem: "112G"
   time: "48:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
 
 
 
@@ -69,9 +69,9 @@ run_gnomix:
   cpus_per_task: 14
   mem: "112G"
   time: "72:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
 
 
 
@@ -80,7 +80,8 @@ combine_tool_results:
   cpus_per_task: 4
   mem: "32G"
   time: "02:00:00"
-  partition: "standard"
-  qos: "normal"
-  account: "YOUR_ACCOUNT"
+  partition: "condo"
+  qos: "condo"
+  account: "csd742"
+
 

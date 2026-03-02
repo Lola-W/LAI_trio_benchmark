@@ -10,7 +10,7 @@ CHR="${1:-22}"
 THREADS="${2:-${THREADS:-${SLURM_CPUS_PER_TASK:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 1)}}}"
 RFMIX_THREADS="${RFMIX_THREADS:-${THREADS}}"
 RFMIX_MEM_GB="${RFMIX_MEM_GB:-112}"
-DEFAULT_LAI_ENV_PREFIX="${ROOT_DIR}/.env/lai-benchmark-tools"
+DEFAULT_LAI_ENV_PREFIX="/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/lai-benchmark-tools"
 
 LAI_ENV_PREFIX="${LAI_ENV_PREFIX:-${LAI_TOOLS_ENV_PREFIX:-}}"
 if [[ -z "${LAI_ENV_PREFIX}" ]]; then
@@ -34,10 +34,11 @@ command -v "${TABIX_BIN}" >/dev/null 2>&1 || {
   exit 1
 }
 
-# Benchmark defaults:
+# Standalone defaults:
 # - Use all child-masked reference samples (no population downsampling)
 # - Use all biallelic SNPs passing FILTER (no extra AF thinning)
-# - Use RFMix2 built-in defaults unless user explicitly overrides
+# - Use RFMix2 built-in defaults unless user explicitly overrides.
+# Snakemake can override MAX_REF_PER_POP/REF_MIN_AF for OOM-safe runs.
 MAX_REF_PER_POP="${MAX_REF_PER_POP:-0}"   # 0 => keep all reference samples
 REF_MIN_AF="${REF_MIN_AF:-0}"             # 0 => no AF filter in reference
 

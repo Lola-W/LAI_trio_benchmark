@@ -62,3 +62,34 @@ From that table, derive tool-specific maps in the next stage:
 
 The reference map must be filtered to the selected reference set (`reference.strict.tsv` or `reference.child_only.tsv`) for each benchmark condition.
 
+## Runtime Best Practices (OOM-Safe Child-Only Runs)
+
+These workflow defaults now prioritize stable completion on chr22 while preserving the masking contract:
+
+- `run_rfmix_test_child_only.sh` and `run_gnomix_test_child_only.sh` both consume:
+  - `MAX_REF_PER_POP` (cap reference samples per label)
+  - `REF_MIN_AF` (optional reference MAF thinning)
+- `run_gnomix_test_child_only.sh` additionally consumes:
+  - `GNOMIX_R_ADMIXED` (reduces simulated admixed sample load during training)
+- Snakemake passes these from `code/snake_conf.yaml`:
+  - `rfmix_max_ref_per_pop`
+  - `rfmix_ref_min_af`
+  - `gnomix_max_ref_per_pop`
+  - `gnomix_ref_min_af`
+  - `gnomix_r_admixed`
+
+Current OOM-safe defaults in `snake_conf.yaml`:
+
+- `threads.rfmix: 8`
+- `threads.gnomix: 8`
+- `rfmix_max_ref_per_pop: 40`
+- `rfmix_ref_min_af: 0.01`
+- `gnomix_max_ref_per_pop: 40`
+- `gnomix_ref_min_af: 0.01`
+- `gnomix_r_admixed: 0.25`
+
+To restore full-panel benchmark behavior, set:
+
+- `*_max_ref_per_pop: 0`
+- `*_ref_min_af: 0`
+- `gnomix_r_admixed: 1`

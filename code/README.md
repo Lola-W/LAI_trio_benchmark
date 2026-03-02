@@ -17,6 +17,7 @@ This folder contains benchmark planning and preprocessing assets.
 - `snake_conf.yaml`: primary Snakemake config (paths, chromosome, threads).
 - `snake_samples.yaml`: sample-selection/masking config (population/superpopulation, n_samples, seed samples).
 - `envs/lai-tools.conda.yml`: conda environment for tooling/runtime dependencies.
+- `envs/gnomix-legacy.conda.yml`: dedicated Gnomix-compatible legacy environment (pins aligned with `tools/gnomix/requirements.txt`).
 - `docs/reference_panel_and_masking.md`: strict vs child-only masking definitions and label contracts.
 - `meta/`: generated preprocessing outputs.
 
@@ -37,16 +38,22 @@ Notes:
 2. `prepare_genetic_maps.sh` writes `maps/plink/plink.chr<CHR>.GRCh38.map`, `maps/plink_allchr.GRCh38.map.tsv`, and `maps/gnomix_map_chr<CHR>.tsv`.
 3. Run scripts auto-detect map files and print recovery commands when missing.
 4. `run_rfmix_test_child_only.sh` auto-detects binary path at `tools/rfmix/build/rfmix` or `tools/rfmix/rfmix`.
-5. `run_rfmix_test_child_only.sh` now defaults to benchmark settings:
-all child-masked references (`MAX_REF_PER_POP=0`), no extra AF thinning (`REF_MIN_AF=0`), and RFMix built-in defaults for trees/CRF/window unless explicitly overridden (`RFMIX_TREES`, `RFMIX_CRF_SPACING`, `RFMIX_RF_WINDOW_SIZE`). `RFMIX_THREADS` defaults to `THREADS` (or `SLURM_CPUS_PER_TASK`).
+5. `run_rfmix_test_child_only.sh` standalone defaults remain full-panel (`MAX_REF_PER_POP=0`, `REF_MIN_AF=0`) with RFMix built-in tree/CRF/window defaults unless explicitly overridden (`RFMIX_TREES`, `RFMIX_CRF_SPACING`, `RFMIX_RF_WINDOW_SIZE`); `RFMIX_THREADS` defaults to `THREADS` (or `SLURM_CPUS_PER_TASK`).
 6. `run_gnomix_test_child_only.sh` auto-detects chromosome naming (`22` vs `chr22`), preprocesses to chromosome-restricted biallelic SNP inputs, and passes the matching chromosome label to Gnomix to avoid whole-VCF fallback and OOM.
-7. `run_gnomix_test_child_only.sh` sets `model.inference: fast` in a per-run config by default (`GNOMIX_MODEL_INFERENCE` to override), and reports an explicit OOM hint on exit code 137.
+7. `run_gnomix_test_child_only.sh` sets `model.inference: fast` in a per-run config by default (`GNOMIX_MODEL_INFERENCE` to override), and now supports `MAX_REF_PER_POP`, `REF_MIN_AF`, and `GNOMIX_R_ADMIXED` for OOM-safe runs.
+8. Snakemake wiring in `snake_conf.yaml` now exposes OOM guardrails (`rfmix_max_ref_per_pop`, `rfmix_ref_min_af`, `gnomix_max_ref_per_pop`, `gnomix_ref_min_af`, `gnomix_r_admixed`) while allowing full-panel restoration by setting them to `0` (and `gnomix_r_admixed: 1`).
+9. `run_gnomix_test_child_only.sh` now supports a dedicated Python env via `GNOMIX_ENV_PREFIX` (or `GNOMIX_TOOLS_ENV_PREFIX`). If unset, it auto-detects `/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/gnomix-legacy` when available; otherwise it falls back to `PYTHON_BIN`/`python3`.
 
 ## Recommended Order
 
 ```bash
 conda env create -f code/envs/lai-tools.conda.yml
 conda activate lai-benchmark-tools
+
+# Optional but recommended for Gnomix compatibility:
+# conda env create -f code/envs/gnomix-legacy.conda.yml \
+#   -p /tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/gnomix-legacy
+# export GNOMIX_ENV_PREFIX=/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/gnomix-legacy
 
 bash code/scripts/build_sample_sets.sh
 Rscript code/scripts/build_population_maps.R
@@ -62,14 +69,14 @@ bash code/scripts/run_gnomix_test_child_only.sh 22
 ## Snakemake (chr22 first run)
 
 ```bash
-cd code
+cd /tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes/code
 snakemake -s Snakefile --configfile snake_conf.yaml --cores 8
 ```
 
-Cluster submission (generic template):
+Cluster submission (same style as your existing workflows):
 
 ```bash
-cd code
+cd /tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes/code
 mkdir -p log
 
 snakemake -s Snakefile \
@@ -86,12 +93,12 @@ snakemake -s Snakefile \
     -A {cluster.account} \
     --mail-user={cluster.mail_user} \
     --mail-type={cluster.mail_type} \
-    --output=log/slurm-%j.out" \
+    --output=/tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes/code/log/slurm-%j.out" \
   --rerun-incomplete \
   --keep-going \
   --latency-wait 120 \
   --use-singularity \
-  --singularity-args "-B /path/to/required/bind_mounts" \
+  --singularity-args "-B /tscc/projects/ps-gleesonlab7/,/tscc/projects/ps-gleesonlab8/,/tscc/projects/ps-gleesonlab5/,/tscc/nfs/home/xiy010/,/tscc/nfs/home/chchung/,/tscc/lustre/ddn/scratch/jiweng/,/scratch/jiweng/,/tscc/nfs/home/jiweng/" \
   -n
 ```
 
