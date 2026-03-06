@@ -1,0 +1,27 @@
+root_dir: "/tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes"
+chromosome: "22"
+
+# Second config file: controls sample selection and masking behavior.
+sample_config: "/tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes/code/snake_samples.yaml"
+lai_env_prefix: "/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/lai-benchmark-tools"
+
+threads:
+  flare: 8
+  rfmix: 14
+  gnomix: 14
+
+memory_gb:
+  flare: 64
+  rfmix: 112
+  gnomix: 112
+
+# Official Gnomix best-practice default for model inference mode.
+gnomix_model_inference: "fast"
+
+# OOM guardrails for child-only benchmark runs on chr22.
+# Set *_max_ref_per_pop: 0 and *_ref_min_af: 0 to restore full-panel behavior.
+rfmix_max_ref_per_pop: 40
+rfmix_ref_min_af: 0.01
+gnomix_max_ref_per_pop: 40
+gnomix_ref_min_af: 0.01
+gnomix_r_admixed: 0.25

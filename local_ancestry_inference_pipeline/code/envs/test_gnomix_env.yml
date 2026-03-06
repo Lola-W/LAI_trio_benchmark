@@ -1,0 +1,20 @@
+name: gnomix
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+dependencies:
+  - python=3.9
+  - bcftools
+  - htslib
+  - tabix
+  - samtools
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - pyyaml
+  - matplotlib
+  - joblib
+  - xgboost
+  - pytorch
