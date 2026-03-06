@@ -1,7 +1,0 @@
-metric	value
-count.complete_trios	602
-count.children	602
-count.unique_parents	1194
-count.unique_trio_members	1793
-count.reference.strict	1409
-count.reference.child_only	2600
