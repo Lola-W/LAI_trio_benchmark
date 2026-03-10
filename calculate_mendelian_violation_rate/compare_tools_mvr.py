@@ -37,10 +37,12 @@ def compare_tools_mvr(intervals_file, pop_file, ped_file, output_file="tool_comp
     df_evaluable['Is_Violation'] = df_evaluable.apply(is_violation, axis=1)
     df_evaluable = df_evaluable.dropna(subset=['Is_Violation'])
     df_evaluable['Is_Violation'] = df_evaluable['Is_Violation'].astype(bool)
+    df_evaluable.to_csv("/home/wzhang/pop_gen/data/evaluable_segments_with_violations.csv", index=False)
 
     child_tool_totals = df_evaluable.groupby(['Tool', 'Child_ID'])['BP_Length'].sum().rename('Total_Evaluable_Length')
     violations_df = df_evaluable[df_evaluable['Is_Violation']]
     child_tool_violations = violations_df.groupby(['Tool', 'Child_ID'])['BP_Length'].sum().reindex(child_tool_totals.index, fill_value=0).rename('Violation_Length')
+    child_tool_violations.to_csv("/home/wzhang/pop_gen/data/child_tool_violations.csv", index=True)
 
     summary_df = pd.concat([child_tool_totals, child_tool_violations], axis=1)
     summary_df['Violation_Rate'] = summary_df['Violation_Length'] / summary_df['Total_Evaluable_Length']

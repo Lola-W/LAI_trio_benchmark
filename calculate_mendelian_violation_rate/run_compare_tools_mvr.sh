@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PYTHON_SCRIPT="/home/wzhang/pop_gen/LAI_trio_benchmark/calculate_mendelian_violation_rate/compare_tools_mvr.py"
-INTERVALS_FILE="/home/wzhang/pop_gen/data/merged_chr22.task2_intervals.tsv"
+INTERVALS_FILE="/home/wzhang/pop_gen/data/merged_chr22_all_flare.task2_intervals.tsv"
 POP_FILE="/home/wzhang/pop_gen/data/sample_to_pop_superpop.tsv"
 PED_FILE="/home/wzhang/pop_gen/data/1kGP.3202_samples.pedigree_info.txt"
 OUTPUT_FILE="/home/wzhang/pop_gen/data/benchmark_mendelian_violation_rates_output.tsv"
