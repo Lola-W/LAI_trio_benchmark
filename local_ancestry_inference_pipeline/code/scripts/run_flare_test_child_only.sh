@@ -9,7 +9,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHR="${1:-22}"
 THREADS="${2:-${THREADS:-${SLURM_CPUS_PER_TASK:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN || echo 1)}}}"
 FLARE_MEM_GB="${FLARE_MEM_GB:-64}"
-DEFAULT_LAI_ENV_PREFIX="/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/lai-benchmark-tools"
+DEFAULT_LAI_ENV_PREFIX=""
 
 LAI_ENV_PREFIX="${LAI_ENV_PREFIX:-${LAI_TOOLS_ENV_PREFIX:-}}"
 if [[ -z "${LAI_ENV_PREFIX}" ]]; then

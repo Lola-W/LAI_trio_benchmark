@@ -210,7 +210,7 @@ write_flare <- function(df, out_file) {
 }
 
 write_tsv_map <- function(df, out_file) {
-  # RFMix and Gnomix sample maps are tab-delimited: <sample_id>\t<label>
+  # RFMix sample maps are tab-delimited: <sample_id>\t<label>
   write.table(df, file = out_file, sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
 }
 
@@ -233,12 +233,6 @@ write_tsv_map(strict_pop, file.path(meta_dir, "rfmix_sample_map.strict.populatio
 write_tsv_map(strict_sup, file.path(meta_dir, "rfmix_sample_map.strict.superpopulation.tsv"))
 write_tsv_map(child_pop, file.path(meta_dir, "rfmix_sample_map.child_only.population.tsv"))
 write_tsv_map(child_sup, file.path(meta_dir, "rfmix_sample_map.child_only.superpopulation.tsv"))
-
-# Gnomix
-write_tsv_map(strict_pop, file.path(meta_dir, "gnomix_sample_map.strict.population.tsv"))
-write_tsv_map(strict_sup, file.path(meta_dir, "gnomix_sample_map.strict.superpopulation.tsv"))
-write_tsv_map(child_pop, file.path(meta_dir, "gnomix_sample_map.child_only.population.tsv"))
-write_tsv_map(child_sup, file.path(meta_dir, "gnomix_sample_map.child_only.superpopulation.tsv"))
 
 summary_df <- data.frame(
   metric = c(
@@ -267,4 +261,4 @@ write.table(
   col.names = TRUE
 )
 
-cat("Wrote population/superpopulation maps and tool panel maps to:\n", meta_dir, "\n", sep = "")
+cat("Wrote population/superpopulation maps and FLARE/RFMix panel maps to:\n", meta_dir, "\n", sep = "")

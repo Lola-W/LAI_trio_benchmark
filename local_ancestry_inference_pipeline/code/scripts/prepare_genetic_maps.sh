@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Download and prepare GRCh38 genetic maps for FLARE, RFMix, and Gnomix.
+# Download and prepare GRCh38 genetic maps for FLARE and RFMix.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MAPS_DIR="${ROOT_DIR}/maps"
@@ -58,16 +58,6 @@ for chr in $(seq 1 22); do
   awk 'NF>=4{c=$1; if(c !~ /^chr/) c="chr" c; print c"\t"$4"\t"$3}' "${f}" >> "${MAPS_DIR}/plink_allchr.GRCh38.map.tsv"
 done
 
-for chr in $(seq 1 22); do
-  src="${PLINK_DIR}/plink.chr${chr}.GRCh38.map"
-  if [[ -f "${src}" ]]; then
-    out="${MAPS_DIR}/gnomix_map_chr${chr}.tsv"
-    # Gnomix map: chromosome position cM (3 columns, no header), ensure chr prefix.
-    awk 'NF>=4{c=$1; if(c !~ /^chr/) c="chr" c; print c"\t"$4"\t"$3}' "${src}" > "${out}"
-  fi
-done
-
 echo "Map preparation complete."
 echo "FLARE per-chr maps: ${PLINK_DIR}/plink.chr<CHR>.GRCh38.map"
 echo "RFMix all-chr map: ${MAPS_DIR}/plink_allchr.GRCh38.map.tsv"
-echo "Gnomix per-chr maps: ${MAPS_DIR}/gnomix_map_chr<CHR>.tsv"

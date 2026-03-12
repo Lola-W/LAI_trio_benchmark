@@ -1,11 +1,10 @@
 # Sample reading + masking selection for LAI benchmark test set.
 masking_mode: "child_only"
 
-# Select children from this population/superpopulation.
-population: "CHS"
-superpopulation: "EAS"
+# Use ALL/ALL to include every child in the ped-derived complete trio file.
+population: "ALL"
+superpopulation: "ALL"
 
-# First run target: chr22 with 11 CHS test children (existing 1 + 10 added).
-n_samples: 11
-seed_samples:
-  - "HG00405"
+# Legacy subset fields (ignored by current all-eligible selection logic).
+n_samples: 0
+seed_samples: []

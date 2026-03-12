@@ -1,82 +1,70 @@
 # Code Directory
 
-This folder contains benchmark planning and preprocessing assets.
+This folder contains the FLARE/RFMix benchmark workflow, preprocessing scripts,
+and integration utilities for the 1000 Genomes trio benchmark.
 
 ## Files and Folders
 
-- `plan.md`: full benchmark design notes.
-- `scripts/build_sample_sets.sh`: generates trio/query/reference sample sets from pedigree data.
-- `scripts/build_population_maps.R`: builds population/superpopulation maps and tool-specific panel-map files.
-- `scripts/stage_tool_maps.sh`: stages tool-map outputs into `../data/`.
-- `scripts/download_tools.sh`: downloads/builds FLARE, RFMix, and Gnomix (no pip).
-- `scripts/prepare_genetic_maps.sh`: downloads GRCh38 maps and prepares FLARE/RFMix/Gnomix map inputs.
-- `scripts/run_flare_test_child_only.sh`: child-only FLARE test script.
-- `scripts/run_rfmix_test_child_only.sh`: child-only RFMix test script.
-- `scripts/run_gnomix_test_child_only.sh`: child-only Gnomix test script.
-- `Snakefile`: Snakemake workflow for chr22 sample selection/masking -> FLARE/RFMix/Gnomix -> combined summary.
-- `snake_conf.yaml`: primary Snakemake config (paths, chromosome, threads).
-- `snake_samples.yaml`: sample-selection/masking config (population/superpopulation, n_samples, seed samples).
-- `envs/lai-tools.conda.yml`: conda environment for tooling/runtime dependencies.
-- `envs/gnomix-legacy.conda.yml`: dedicated Gnomix-compatible legacy environment (pins aligned with `tools/gnomix/requirements.txt`).
-- `docs/reference_panel_and_masking.md`: strict vs child-only masking definitions and label contracts.
-- `meta/`: generated preprocessing outputs.
+- `plan.md`: benchmark planning notes
+- `Snakefile`: Snakemake workflow for chr-wise sample selection, masking, FLARE, RFMix, and combined summaries
+- `snake_conf.yaml`: primary Snakemake config (repo paths, chromosome, threads, RFMix guardrails)
+- `snake_samples.yaml`: sample-selection config; defaults to `ALL/ALL` children with complete trios
+- `scripts/build_sample_sets.sh`: generates trio/query/reference sample sets from pedigree data
+- `scripts/build_population_maps.R`: builds population/superpopulation metadata plus FLARE and RFMix panel-map files
+- `scripts/stage_tool_maps.sh`: stages metadata and per-child test manifests into `../data/`
+- `scripts/stage_rfmix_inputs_from_flare.sh`: builds an RFMix-ready bundle from refreshed FLARE inputs
+- `scripts/download.sh`: downloads 1000 Genomes phased panel inputs into the repo root by default
+- `scripts/download_tools.sh`: downloads/builds FLARE and RFMix
+- `scripts/prepare_genetic_maps.sh`: prepares GRCh38 FLARE and RFMix genetic maps
+- `scripts/run_flare_test_child_only.sh`: child-only FLARE test runner
+- `scripts/run_rfmix_test_child_only.sh`: child-only RFMix test runner
+- `scripts/integration/`: FLARE/RFMix standardization and merge helpers
+- `docs/reference_panel_and_masking.md`: strict vs child-only masking definitions and label contracts
+- `envs/lai-tools.conda.yml`: conda environment for workflow/runtime dependencies
+- `meta/`: generated preprocessing outputs
 
-## Script Index (Numbered)
+## Notes
 
-1. `scripts/build_sample_sets.sh`
-2. `scripts/build_population_maps.R`
-3. `scripts/stage_tool_maps.sh`
-4. `scripts/download_tools.sh`
-5. `scripts/prepare_genetic_maps.sh`
-6. `scripts/run_flare_test_child_only.sh`
-7. `scripts/run_rfmix_test_child_only.sh`
-8. `scripts/run_gnomix_test_child_only.sh`
-9. `Snakefile` + `snake_conf.yaml` + `snake_samples.yaml`
-
-Notes:
-1. `download_tools.sh` auto-detects RFMix build style (CMake or Autotools).
-2. `prepare_genetic_maps.sh` writes `maps/plink/plink.chr<CHR>.GRCh38.map`, `maps/plink_allchr.GRCh38.map.tsv`, and `maps/gnomix_map_chr<CHR>.tsv`.
-3. Run scripts auto-detect map files and print recovery commands when missing.
-4. `run_rfmix_test_child_only.sh` auto-detects binary path at `tools/rfmix/build/rfmix` or `tools/rfmix/rfmix`.
-5. `run_rfmix_test_child_only.sh` standalone defaults remain full-panel (`MAX_REF_PER_POP=0`, `REF_MIN_AF=0`) with RFMix built-in tree/CRF/window defaults unless explicitly overridden (`RFMIX_TREES`, `RFMIX_CRF_SPACING`, `RFMIX_RF_WINDOW_SIZE`); `RFMIX_THREADS` defaults to `THREADS` (or `SLURM_CPUS_PER_TASK`).
-6. `run_gnomix_test_child_only.sh` auto-detects chromosome naming (`22` vs `chr22`), preprocesses to chromosome-restricted biallelic SNP inputs, and passes the matching chromosome label to Gnomix to avoid whole-VCF fallback and OOM.
-7. `run_gnomix_test_child_only.sh` sets `model.inference: fast` in a per-run config by default (`GNOMIX_MODEL_INFERENCE` to override), and now supports `MAX_REF_PER_POP`, `REF_MIN_AF`, and `GNOMIX_R_ADMIXED` for OOM-safe runs.
-8. Snakemake wiring in `snake_conf.yaml` now exposes OOM guardrails (`rfmix_max_ref_per_pop`, `rfmix_ref_min_af`, `gnomix_max_ref_per_pop`, `gnomix_ref_min_af`, `gnomix_r_admixed`) while allowing full-panel restoration by setting them to `0` (and `gnomix_r_admixed: 1`).
-9. `run_gnomix_test_child_only.sh` now supports a dedicated Python env via `GNOMIX_ENV_PREFIX` (or `GNOMIX_TOOLS_ENV_PREFIX`). If unset, it auto-detects `/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/gnomix-legacy` when available; otherwise it falls back to `PYTHON_BIN`/`python3`.
+1. `download_tools.sh` auto-detects the RFMix build style and builds either the
+   CMake or Autotools layout.
+2. `prepare_genetic_maps.sh` writes `maps/plink/plink.chr<CHR>.GRCh38.map` for
+   FLARE and `maps/plink_allchr.GRCh38.map.tsv` for RFMix.
+3. `run_rfmix_test_child_only.sh` auto-detects the RFMix binary under
+   `tools/rfmix/build/rfmix` or `tools/rfmix/rfmix`.
+4. `run_rfmix_test_child_only.sh` keeps full-panel defaults unless you override
+   `MAX_REF_PER_POP`, `REF_MIN_AF`, `RFMIX_TREES`, `RFMIX_CRF_SPACING`, or
+   `RFMIX_RF_WINDOW_SIZE`.
+5. `snake_conf.yaml` exposes `rfmix_max_ref_per_pop` and `rfmix_ref_min_af`
+   for OOM-safe Snakemake runs.
 
 ## Recommended Order
 
 ```bash
-conda env create -f code/envs/lai-tools.conda.yml
+conda env create -f ./code/envs/lai-tools.conda.yml
 conda activate lai-benchmark-tools
 
-# Optional but recommended for Gnomix compatibility:
-# conda env create -f code/envs/gnomix-legacy.conda.yml \
-#   -p /tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/gnomix-legacy
-# export GNOMIX_ENV_PREFIX=/tscc/nfs/home/jiweng/ps-gleesonlab5/user/jiweng/conda-envs/gnomix-legacy
+bash ./code/scripts/build_sample_sets.sh
+Rscript ./code/scripts/build_population_maps.R
+bash ./code/scripts/stage_tool_maps.sh TRIO0001
 
-bash code/scripts/build_sample_sets.sh
-Rscript code/scripts/build_population_maps.R
-bash code/scripts/stage_tool_maps.sh TRIO0001
-bash code/scripts/download_tools.sh
-bash code/scripts/prepare_genetic_maps.sh
+bash ./code/scripts/download_tools.sh
+bash ./code/scripts/prepare_genetic_maps.sh
 
-bash code/scripts/run_flare_test_child_only.sh 22
-bash code/scripts/run_rfmix_test_child_only.sh 22
-bash code/scripts/run_gnomix_test_child_only.sh 22
+bash ./code/scripts/run_flare_test_child_only.sh 22
+bash ./code/scripts/run_rfmix_test_child_only.sh 22
 ```
 
-## Snakemake (chr22 first run)
+## Snakemake
 
 ```bash
-cd /tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes/code
+cd ./code
 snakemake -s Snakefile --configfile snake_conf.yaml --cores 8
 ```
 
-Cluster submission (same style as your existing workflows):
+Cluster submission example:
 
 ```bash
-cd /tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes/code
+cd ./code
 mkdir -p log
 
 snakemake -s Snakefile \
@@ -93,18 +81,30 @@ snakemake -s Snakefile \
     -A {cluster.account} \
     --mail-user={cluster.mail_user} \
     --mail-type={cluster.mail_type} \
-    --output=/tscc/nfs/home/jiweng/ps-gleesonlab9/user/jiweng/1000genomes/code/log/slurm-%j.out" \
+    --output=./log/slurm-%j.out" \
   --rerun-incomplete \
   --keep-going \
   --latency-wait 120 \
-  --use-singularity \
-  --singularity-args "-B /tscc/projects/ps-gleesonlab7/,/tscc/projects/ps-gleesonlab8/,/tscc/projects/ps-gleesonlab5/,/tscc/nfs/home/xiy010/,/tscc/nfs/home/chchung/,/tscc/lustre/ddn/scratch/jiweng/,/scratch/jiweng/,/tscc/nfs/home/jiweng/" \
   -n
 ```
+
+Add any site-specific `--use-singularity` and `--singularity-args` options that
+your cluster requires.
 
 Final combined output:
 - `out/Combined/chr22/combined_tool_summary.tsv`
 - `out/Combined/chr22/combined_tool_paths.txt`
+
+## Integration Utilities
+
+The workflow now includes:
+- `scripts/integration/rfmix_integrate.py`
+- `scripts/integration/flare_integrate.py`
+- `scripts/integration/merge_lai_inputs.py`
+
+These scripts normalize FLARE and RFMix outputs into a shared segment schema and
+then build downstream task-2/task-3 interval inputs. See
+`scripts/integration/README.md` for command examples.
 
 ## Current Generated Outputs (`meta/`)
 
@@ -126,5 +126,4 @@ Additional outputs from `build_population_maps.R`:
 - `kgpe_3202_metadata.tsv`
 - `flare_ref_panel.*.txt`
 - `rfmix_sample_map.*.tsv`
-- `gnomix_sample_map.*.tsv`
 - `summary.population_maps.tsv`

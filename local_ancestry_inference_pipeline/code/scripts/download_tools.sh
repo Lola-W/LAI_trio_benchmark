@@ -22,7 +22,7 @@ require_cmd() {
 require_cmd git
 require_cmd curl
 
-echo "[1/3] FLARE"
+echo "[1/2] FLARE"
 mkdir -p "${TOOLS_DIR}/flare"
 FLARE_JAR_PATH="${TOOLS_DIR}/flare/flare.jar"
 if [[ -n "${FLARE_JAR_URL:-}" ]]; then
@@ -50,7 +50,7 @@ else
 fi
 echo "Saved: ${FLARE_JAR_PATH}"
 
-echo "[2/3] RFMix"
+echo "[2/2] RFMix"
 RFMIX_GIT_URL="${RFMIX_GIT_URL:-https://github.com/slowkoni/rfmix}"
 if [[ ! -d "${TOOLS_DIR}/rfmix/.git" ]]; then
   git clone --recursive "${RFMIX_GIT_URL}" "${TOOLS_DIR}/rfmix"
@@ -92,12 +92,4 @@ else
   exit 1
 fi
 
-echo "[3/3] Gnomix"
-GNOMIX_GIT_URL="${GNOMIX_GIT_URL:-https://github.com/AI-sandbox/gnomix}"
-if [[ ! -d "${TOOLS_DIR}/gnomix/.git" ]]; then
-  git clone "${GNOMIX_GIT_URL}" "${TOOLS_DIR}/gnomix"
-else
-  echo "Exists: ${TOOLS_DIR}/gnomix (skip clone)"
-fi
-
-echo "Tool download/build complete."
+echo "FLARE/RFMix download/build complete."

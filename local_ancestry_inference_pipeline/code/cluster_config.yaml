@@ -64,17 +64,6 @@ run_rfmix:
 
 
 
-run_gnomix:
-  nodes: 1
-  cpus_per_task: 14
-  mem: "112G"
-  time: "72:00:00"
-  partition: "condo"
-  qos: "condo"
-  account: "csd742"
-
-
-
 combine_tool_results:
   nodes: 1
   cpus_per_task: 4
@@ -83,5 +72,4 @@ combine_tool_results:
   partition: "condo"
   qos: "condo"
   account: "csd742"
-
 
